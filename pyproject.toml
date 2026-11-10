@@ -1,0 +1,16 @@
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "signs"
+version = "0.1.0"
+description = "Edge-detection front ends + dense / quantized / sparse CNNs on GTSRB"
+requires-python = ">=3.9"
+dependencies = ["torch", "torchvision", "matplotlib"]
+
+[project.optional-dependencies]
+kaggle = ["kagglehub"]
+
+[tool.setuptools]
+packages = ["signs"]
