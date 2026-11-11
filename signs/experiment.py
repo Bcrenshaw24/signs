@@ -41,7 +41,7 @@ import torch
 import torch.nn.functional as F
 
 from .filters import build_filter, FILTERS
-from .models import build_model, cubic_sparsity_schedule, MODELS, SparseCNN, SparseInferenceCNN
+from .models import build_model, cubic_sparsity_schedule, MODELS, SparseCNN
 from .data import load_split, augment
 
 
@@ -105,18 +105,20 @@ def train(model, data, args, device, log_prefix=""):
 
 
 @torch.no_grad()
-def cpu_latency_ms(model, img_size, batch=64, reps=10):
-    """Per-image CPU latency (ms) incl. the edge filter. Note: QAT models use
-    *fake* quantization in fp32, so their latency is NOT representative of
-    int kernels -- compare their storage_kb instead."""
-    # CSR tensors can't be deep-copied; the sparse inference model is already on CPU
-    m = model.eval() if isinstance(model, SparseInferenceCNN) else copy.deepcopy(model).cpu().eval()
-    x = torch.rand(batch, 3, img_size, img_size)
-    for _ in range(3):
+def latency_ms(model, img_size, device, batch=256, reps=20):
+    """Per-image inference latency (ms) on `device`, incl. the edge filter.
+    Note: QAT models use *fake* quantization in fp32, so their latency is NOT
+    representative of int kernels -- compare their storage_kb instead."""
+    m = model.to(device).eval()
+    x = torch.rand(batch, 3, img_size, img_size, device=device)
+    sync = torch.cuda.synchronize if device.type == "cuda" else (lambda: None)
+    for _ in range(5):
         m(x)
+    sync()
     t0 = time.perf_counter()
     for _ in range(reps):
         m(x)
+    sync()
     return (time.perf_counter() - t0) / (reps * batch) * 1000.0
 
 
@@ -297,24 +299,24 @@ def _run(args):
                        storage_kb=round(model.storage_bits() / 8 / 1024, 1),
                        train_s=round(train_time, 1))
             if not args.no_latency:
-                row["cpu_ms_per_img"] = round(cpu_latency_ms(model, args.img_size), 4)
+                row["ms_per_img"] = round(latency_ms(model, args.img_size, device), 4)
             results.append(row)
             torch.save(model.state_dict(), os.path.join(args.out, "ckpt", name.replace("/", "__") + ".pt"))
             trained_front_ends.setdefault(fname, model.front_end)
 
             if kind == "sparse":
                 # real CSR inference -- should match accuracy, latency is the point
-                sm = copy.deepcopy(model).cpu().to_sparse().eval()
-                s_acc = evaluate(sm, *test_data, torch.device("cpu"))
+                sm = copy.deepcopy(model).to_sparse().eval()
+                s_acc = evaluate(sm, *test_data, device)
                 srow = dict(row, model=tag + "-csr", test_acc=round(s_acc, 4))
                 if not args.no_latency:
-                    srow["cpu_ms_per_img"] = round(cpu_latency_ms(sm, args.img_size), 4)
+                    srow["ms_per_img"] = round(latency_ms(sm, args.img_size, device), 4)
                 results.append(srow)
 
             print(f"[{name}] " + "  ".join(f"{k}={v}" for k, v in row.items() if k not in ("filter", "model")))
 
     # ---- report ----
-    cols = ["filter", "model", "test_acc", "params", "nnz_weights", "storage_kb", "cpu_ms_per_img", "train_s"]
+    cols = ["filter", "model", "test_acc", "params", "nnz_weights", "storage_kb", "ms_per_img", "train_s"]
     cols = [c for c in cols if any(c in r for r in results)]
     widths = {c: max(len(c), *(len(str(r.get(c, ""))) for r in results)) for c in cols}
     print("\n" + "  ".join(c.ljust(widths[c]) for c in cols))

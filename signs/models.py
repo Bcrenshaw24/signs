@@ -333,7 +333,7 @@ class SparseLinearCSR(nn.Module):
         self.nnz = int((weight != 0).sum())
 
     def forward(self, x):
-        return torch.sparse.mm(self.w, x.t()).t() + self.b
+        return torch.sparse.mm(self.w, x.t().contiguous()).t() + self.b
 
 
 class SparseInferenceCNN(nn.Module):
