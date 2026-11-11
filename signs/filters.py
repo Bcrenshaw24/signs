@@ -1,5 +1,5 @@
 """
-Edge-detection front ends for the sign classifier.
+Edge-detection for the sign classifier.
 
 Every filter is an nn.Module that takes a batch of images in [0, 1]
 (shape N x 3 x H x W) and returns an edge map (N x C x H x W), where
@@ -14,8 +14,6 @@ from whichever filter it is given.
 
 Use build_filter(name) to construct one by name.
 """
-
-import math
 
 import torch
 import torch.nn as nn

@@ -1,4 +1,4 @@
-"""Edge-filter front ends + dense / quantized / sparse CNNs on GTSRB."""
+"""Edge-filter dense / quantized / sparse CNNs on GTSRB."""
 
 from .data import load_split, augment, NUM_CLASSES
 from .filters import build_filter, FILTERS
